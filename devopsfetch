@@ -10,22 +10,10 @@ display_help() {
     echo "Options:"
     echo "  -p, --port [PORT]     Display active ports or info about a specific port"
     echo "  -d, --docker [NAME]   List Docker images/containers or info about a specific container"
-    echo "  -n, --nginx [DOMAIN]  Display Nginx domains, proxy targets, configurations, and configuration files"
+    echo "  -n, --nginx [DOMAIN]  Display Nginx domains or config for a specific domain"
     echo "  -u, --users [USER]    List users and last login times or info about a specific user"
     echo "  -t, --time START END  Display activities within a specified time range"
     echo "  -h, --help            Display this help message"
-    echo
-    echo "Examples:"
-    echo "  devopsfetch -p              # List all active ports"
-    echo "  devopsfetch -p 80           # Show details for port 80"
-    echo "  devopsfetch -d              # List all Docker images and containers"
-    echo "  devopsfetch -d mycontainer  # Show details for 'mycontainer'"
-    echo "  devopsfetch -n              # List all Nginx domains, proxy targets, configurations, and config files"
-    echo "  devopsfetch -n example.com  # Show details for example.com"
-    echo "  devopsfetch -u              # List all users and last login times"
-    echo "  devopsfetch -u johndoe      # Show details for user 'johndoe'"
-    echo "  devopsfetch -t '2023-01-01 00:00:00' '2023-01-31 23:59:59'"
-    echo "                              # Show activities in January 2023"
 }
 
 # Function to format output as a table
@@ -36,15 +24,49 @@ format_table() {
 # Function to display ports information
 display_ports() {
     if [ -z "$1" ]; then
-        echo "Active Ports and Services:"
-        ss -tuln | awk 'NR>1 {print $5}' | awk -F: '{print $NF}' | sort -n | uniq | \
-        while read port; do
-            service=$(lsof -i :$port | awk 'NR>1 {print $1}' | head -1)
-            echo -e "$port\t$service"
-        done | format_table
+        echo "Active Ports, Users, and Services:"
+        printf "%-15s %-10s %-20s %-30s %-10s\n" "USER" "PORT" "SERVICE" "PROCESS" "PID"
+        echo "---------------------------------------------------------------------------------------------------"
+        sudo netstat -tulnp | awk 'NR>2 && $6 == "LISTEN" {
+            split($4, a, ":");
+            port = a[length(a)];
+            pid_prog = $7;
+            split(pid_prog, pp, "/");
+            pid = pp[1];
+            if (pid != "-") {
+                cmd = "ps -o user=,comm=,cmd= -p " pid;
+                cmd | getline info;
+                close(cmd);
+                split(info, b, " ");
+                user = b[1];
+                service = b[2];
+                $1 = $2 = $3 = $4 = $5 = $6 = $7 = "";
+                process = substr($0, 8);
+                gsub(/^ +/, "", process);
+                printf "%-15s %-10s %-20s %-30.30s %-10s\n", user, port, service, process, pid;
+            }
+        }'
     else
         echo "Details for Port $1:"
-        lsof -i :$1 | awk 'NR>1 {print $1"\t"$2"\t"$3"\t"$9}' | format_table
+        printf "%-15s %-10s %-20s %-30s %-10s\n" "USER" "PORT" "SERVICE" "PROCESS" "PID"
+        echo "---------------------------------------------------------------------------------------------------"
+        sudo netstat -tulnp | awk -v port="$1" '$4 ~ ":"port"$" && $6 == "LISTEN" {
+            pid_prog = $7;
+            split(pid_prog, pp, "/");
+            pid = pp[1];
+            if (pid != "-") {
+                cmd = "ps -o user=,comm=,cmd= -p " pid;
+                cmd | getline info;
+                close(cmd);
+                split(info, b, " ");
+                user = b[1];
+                service = b[2];
+                $1 = $2 = $3 = $4 = $5 = $6 = $7 = "";
+                process = substr($0, 8);
+                gsub(/^ +/, "", process);
+                printf "%-15s %-10s %-20s %-30.30s %-10s\n", user, port, service, process, pid;
+            }
+        }'
     fi
 }
 
@@ -65,23 +87,15 @@ display_docker() {
 # Function to display Nginx information
 display_nginx() {
     if [ -z "$1" ]; then
-        echo "Nginx Domains, Proxy Targets, Configurations, and Configuration Files:"
-        grep -h 'server_name' /etc/nginx/sites-enabled/* | awk '{print $2}' | sed 's/;//' | \
+        echo "Nginx Domains and Ports:"
+        grep -h server_name /etc/nginx/sites-enabled/* | awk '{print $2}' | sed 's/;//' | \
         while read domain; do
-            config_file=$(grep -Rl "server_name $domain" /etc/nginx/sites-enabled/)
-            proxy_target=$(grep -A 10 "server_name $domain" "$config_file" | grep 'proxy_pass' | awk '{print $2}' | sed 's/;//')
-            config_content=$(grep -A 20 "server_name $domain" "$config_file" | sed 's/^/    /')
-            echo -e "$domain\t$proxy_target\t$config_content\t$config_file"
+            port=$(grep -h listen /etc/nginx/sites-enabled/* | grep -v '#' | awk '{print $2}' | sed 's/;//' | head -1)
+            echo -e "$domain\t$port"
         done | format_table
     else
         echo "Nginx Configuration for $1:"
-        config_file=$(grep -Rl "server_name $1" /etc/nginx/sites-enabled/)
-        echo "Proxy Target(s):"
-        grep -A 10 "server_name $1" "$config_file" | grep 'proxy_pass' | awk '{print $2}' | sed 's/;//'
-        echo "Configuration:"
-        grep -A 20 "server_name $1" "$config_file" | sed 's/^/    /'
-        echo "Configuration File(s):"
-        echo "$config_file"
+        grep -R -A 20 "server_name $1" /etc/nginx/sites-enabled/* | sed 's/^/    /'
     fi
 }
 
@@ -97,6 +111,7 @@ display_users() {
         echo "Groups: $(groups $1)"
     fi
 }
+
 
 # Function to display activities within a time range
 # Function to display activities within a time range
