@@ -83,8 +83,7 @@ devopsfetch -n domain.com
 devopsfetch -p 80
 ```
 
-4. 
-Display user information:
+4. Display user information:
 
 ```console
 devopsfetch -u ubuntu
@@ -92,7 +91,7 @@ devopsfetch -u ubuntu
 
 5. DevOpsFetch logs all activities to /var/log/devopsfetch.log.
 
-To view the logs, use this command:
+   To see the logs, use this command:
 
 ```console
 sudo tail -f /var/log/devopsfetch.log
